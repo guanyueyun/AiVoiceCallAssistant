@@ -1,0 +1,70 @@
+plugins {
+    id "com.android.application"
+}
+
+def localProps = new Properties()
+def localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+
+def debugSecret = { name ->
+    def value = localProps.getProperty(name)
+    if (value == null || value.trim().isEmpty()) {
+        value = System.getenv(name)
+    }
+    return value == null ? "" : value.trim()
+}
+
+def quoted = { value ->
+    return "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+}
+
+android {
+    namespace "com.example.aivoice"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.example.aivoice"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            // 仅 Debug 包注入火山语音调试凭据；Release 包不会包含这些值。
+            buildConfigField "String", "DEBUG_VOLC_APP_ID", quoted(debugSecret("VOLC_APP_ID"))
+            buildConfigField "String", "DEBUG_VOLC_APP_KEY", quoted(debugSecret("VOLC_APP_KEY"))
+            buildConfigField "String", "DEBUG_VOLC_TOKEN", quoted(debugSecret("VOLC_TOKEN"))
+            buildConfigField "String", "DEBUG_VOLC_RESOURCE_ID", quoted(debugSecret("VOLC_RESOURCE_ID"))
+            buildConfigField "String", "DEBUG_VOLC_CLUSTER", quoted(debugSecret("VOLC_CLUSTER"))
+            buildConfigField "String", "DEBUG_VOLC_BOT_NAME", quoted(debugSecret("VOLC_BOT_NAME"))
+            buildConfigField "String", "DEBUG_VOLC_PAYLOAD", quoted(debugSecret("VOLC_PAYLOAD"))
+        }
+        release {
+            buildConfigField "String", "DEBUG_VOLC_APP_ID", "\"\""
+            buildConfigField "String", "DEBUG_VOLC_APP_KEY", "\"\""
+            buildConfigField "String", "DEBUG_VOLC_TOKEN", "\"\""
+            buildConfigField "String", "DEBUG_VOLC_RESOURCE_ID", "\"\""
+            buildConfigField "String", "DEBUG_VOLC_CLUSTER", "\"\""
+            buildConfigField "String", "DEBUG_VOLC_BOT_NAME", "\"\""
+            buildConfigField "String", "DEBUG_VOLC_PAYLOAD", "\"\""
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation "com.bytedance.speechengine:speechengine_tob:0.0.14.3-bugfix"
+}

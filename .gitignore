@@ -1,0 +1,22 @@
+# Gradle and Android build outputs
+.gradle/
+build/
+**/build/
+
+# Local IDE files
+.idea/
+*.iml
+
+# Local machine configuration and credentials
+local.properties
+
+# Generated APK/AAB artifacts
+*.apk
+*.aab
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
