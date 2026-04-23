@@ -6,6 +6,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Handler;
@@ -14,7 +15,9 @@ import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
+import android.util.Log;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.LayoutInflater;
 import android.widget.Button;
@@ -27,7 +30,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -43,6 +48,7 @@ import java.util.Locale;
  * 网络请求、回复动画和头像绘制分别交给独立类处理，避免主界面类继续膨胀。
  */
 public class MainActivity extends Activity {
+    private static final String TAG = "MainActivity";
     private static final int REQ_RECORD_AUDIO = 7;
     private static final int REQ_RECOGNIZE_SPEECH = 8;
 
@@ -57,13 +63,17 @@ public class MainActivity extends Activity {
     private View callScreen;
     private View chatScreen;
     private View modelScreen;
+    private View voiceHoldOverlay;
     private TextView modelBadge;
     private TextView callTimer;
     private AvatarView avatarView;
     private TextView callStatus;
     private TextView subtitle;
     private TextView transcript;
+    private TextView voiceHoldHint;
+    private TextView voiceHoldWave;
     private ImageButton micButton;
+    private ImageButton chatVoiceButton;
     private EditText callInput;
     private EditText chatInput;
     private LinearLayout chatList;
@@ -106,6 +116,9 @@ public class MainActivity extends Activity {
     private boolean speechListening;
     private boolean cloudRecording;
     private boolean callMuted;
+    private boolean chatVoiceMode;
+    private boolean voiceHoldCancel;
+    private String chatTextDraft = "";
 
     private interface SpeechCallback {
         // 对 Android SpeechRecognizer 回调做一层简化封装。
@@ -219,6 +232,7 @@ public class MainActivity extends Activity {
         callScreen = findViewById(R.id.call_screen);
         chatScreen = findViewById(R.id.chat_screen);
         modelScreen = findViewById(R.id.model_screen);
+        voiceHoldOverlay = findViewById(R.id.voice_hold_overlay);
         modelBadge = findViewById(R.id.model_badge);
         callTimer = findViewById(R.id.call_timer);
         ((TextView) findViewById(R.id.douya_title)).setText("豆芽");
@@ -226,7 +240,10 @@ public class MainActivity extends Activity {
         callStatus = findViewById(R.id.call_status);
         subtitle = findViewById(R.id.subtitle);
         transcript = findViewById(R.id.transcript);
+        voiceHoldHint = findViewById(R.id.voice_hold_hint);
+        voiceHoldWave = findViewById(R.id.voice_hold_wave);
         micButton = findViewById(R.id.mic_button);
+        chatVoiceButton = findViewById(R.id.chat_voice);
         callInput = findViewById(R.id.call_input);
         chatInput = findViewById(R.id.chat_input);
         chatList = findViewById(R.id.chat_list);
@@ -252,25 +269,33 @@ public class MainActivity extends Activity {
         // 集中绑定点击事件，避免同一个按钮的逻辑分散在多个方法里。
         // 这里出现的控件才是当前版本真正可交互的功能入口。
         findViewById(R.id.nav_call).setOnClickListener(v -> showCall());
-        findViewById(R.id.nav_chat).setOnClickListener(v -> showChat());
+        findViewById(R.id.call_close).setOnClickListener(v -> exitCallToChat());
         findViewById(R.id.nav_model).setOnClickListener(v -> showModels());
         findViewById(R.id.model_back).setOnClickListener(v -> showChat());
         findViewById(R.id.call_send).setOnClickListener(v -> sendCallText());
+        findViewById(R.id.call_video).setOnClickListener(v -> showUnsupportedCallFeature("视频通话功能暂未接入"));
         findViewById(R.id.mic_button).setOnClickListener(v -> toggleCallMute());
-        findViewById(R.id.subtitle_button).setOnClickListener(v -> toggleSubtitles());
-        findViewById(R.id.interrupt_button).setOnClickListener(v -> interruptSpeaking());
         avatarView.setOnLongClickListener(v -> {
             avatarView.playExpressionDemo();
             subtitle.setText("正在依次展示豆芽的所有表情");
             return true;
         });
-        findViewById(R.id.chat_send).setOnClickListener(v -> sendChatText());
-        findViewById(R.id.chat_voice).setOnClickListener(v -> fillChatInputBySpeech());
+        findViewById(R.id.chat_send).setOnClickListener(v -> handleChatPlusButton());
+        findViewById(R.id.chat_camera).setOnClickListener(v ->
+                Toast.makeText(this, "拍照识别稍后接入", Toast.LENGTH_SHORT).show());
+        chatVoiceButton.setOnClickListener(v -> toggleChatVoiceMode());
+        chatInput.setOnTouchListener((v, event) -> {
+            if (!chatVoiceMode) {
+                return false;
+            }
+            handleVoiceHoldTouch(event);
+            return true;
+        });
         findViewById(R.id.save_model_button).setOnClickListener(v -> saveModel());
-        findViewById(R.id.suggestion_summary).setOnClickListener(v -> fillChatPrompt("帮我总结下面这段内容："));
+        findViewById(R.id.suggestion_summary).setOnClickListener(v -> fillChatPrompt("请用简短直接的方式回答："));
         findViewById(R.id.suggestion_create).setOnClickListener(v -> fillChatPrompt("帮我写一段清晰自然的文案："));
-        findViewById(R.id.suggestion_minutes).setOnClickListener(v -> fillChatPrompt("帮我整理会议纪要："));
-        findViewById(R.id.suggestion_qa).setOnClickListener(v -> fillChatPrompt("请分步骤解答这个问题："));
+        findViewById(R.id.suggestion_minutes).setOnClickListener(v -> fillChatPrompt("请帮我解答这道题："));
+        findViewById(R.id.suggestion_qa).setOnClickListener(v -> fillChatPrompt("请深入研究并给出结构化分析："));
     }
 
     private void initTextToSpeech() {
@@ -306,6 +331,35 @@ public class MainActivity extends Activity {
         renderChatList();
     }
 
+    private void exitCallToChat() {
+        // 底部红色 X 是“结束本次语音通话并返回文字对话”，不是普通页面切换。
+        // 离开前要立即停止收音、取消自动监听和播放，避免切回文字页后麦克风仍在后台工作。
+        Log.d(TAG, "call close clicked, exit voice call to chat");
+        stopCallAudioSession();
+        callMuted = false;
+        updateMicButtonState();
+        showChat();
+    }
+
+    private void stopCallAudioSession() {
+        // 这里使用“立即停止”语义：不再请求火山/实时识别输出最终结果，
+        // 因为用户点击 X 或静音时表达的是停止收录声音，而不是提交当前半句话。
+        cancelAutoListening();
+        cancelAiSpeechEndDelay();
+        stopCloudRecording(false);
+        finishSpeechInput(true);
+        assistantEngine.cancel();
+        if (tts != null) {
+            tts.stop();
+        }
+        if (speakingRunnable != null) {
+            handler.removeCallbacks(speakingRunnable);
+            speakingRunnable = null;
+        }
+        avatarView.setAudioEnergy(0f);
+        setCallState(CallState.IDLE, "中性", "语音通话已结束");
+    }
+
     private void showModels() {
         // 每次进入模型页都重建卡片，因为默认模型、启用状态可能刚刚被修改。
         switchScreen(modelScreen);
@@ -335,11 +389,19 @@ public class MainActivity extends Activity {
         // 可以复用和语音识别相同的模型请求流程。
         String userText = callInput.getText().toString().trim();
         if (userText.isEmpty()) {
+            Toast.makeText(this, "当前语音模式会自动收录声音，文字输入稍后接入", Toast.LENGTH_SHORT).show();
             return;
         }
         callInput.setText("");
         appendTranscript("你：" + userText);
         askModelForCall(userText);
+    }
+
+    private void showUnsupportedCallFeature(String message) {
+        // 底部保留豆包同款功能入口，但当前版本尚未接入视频通话等能力。
+        // 给出明确提示，避免按钮点击后看起来没有任何反应。
+        Log.d(TAG, "unsupported call feature clicked: " + message);
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
     private void sendChatText() {
@@ -381,6 +443,88 @@ public class MainActivity extends Activity {
                 updateAssistantMessage(assistantIndex, message, false);
             }
         });
+    }
+
+    private void handleChatPlusButton() {
+        // 参考豆包输入栏的“+”入口：空输入时作为更多能力入口；
+        // 当前项目还没有附件面板，因此有文字时仍复用发送能力，避免丢失基础聊天操作。
+        if (chatInput.getText().toString().trim().isEmpty()) {
+            Toast.makeText(this, "更多功能稍后接入", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        sendChatText();
+    }
+
+    private void toggleChatVoiceMode() {
+        setChatVoiceMode(!chatVoiceMode);
+    }
+
+    private void setChatVoiceMode(boolean enabled) {
+        chatVoiceMode = enabled;
+        hideVoiceHoldOverlay();
+        if (enabled) {
+            // 参考豆包输入栏：进入语音模式后中间区域只展示“按住说话”，右侧按钮变成键盘。
+            chatTextDraft = chatInput.getText().toString();
+            chatInput.setText("");
+            chatInput.setHint("按住说话");
+            chatInput.setGravity(Gravity.CENTER);
+            chatInput.setFocusable(false);
+            chatInput.setFocusableInTouchMode(false);
+            chatInput.setCursorVisible(false);
+            chatVoiceButton.setImageResource(R.drawable.ic_keyboard_circle);
+            chatVoiceButton.setContentDescription("切换键盘输入");
+            return;
+        }
+        chatInput.setGravity(Gravity.CENTER_VERTICAL);
+        chatInput.setFocusable(true);
+        chatInput.setFocusableInTouchMode(true);
+        chatInput.setCursorVisible(true);
+        chatInput.setHint("发消息或按住说话...");
+        chatInput.setText(chatTextDraft);
+        chatInput.setSelection(chatInput.length());
+        chatVoiceButton.setImageResource(R.drawable.ic_voice_circle);
+        chatVoiceButton.setContentDescription("语音输入");
+    }
+
+    private void handleVoiceHoldTouch(MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                voiceHoldCancel = false;
+                showVoiceHoldOverlay(false);
+                break;
+            case MotionEvent.ACTION_MOVE:
+                voiceHoldCancel = event.getY() < -dp(72);
+                showVoiceHoldOverlay(voiceHoldCancel);
+                break;
+            case MotionEvent.ACTION_UP:
+                hideVoiceHoldOverlay();
+                if (voiceHoldCancel) {
+                    Toast.makeText(this, "已取消语音输入", Toast.LENGTH_SHORT).show();
+                } else {
+                    fillChatInputBySpeech();
+                }
+                voiceHoldCancel = false;
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                hideVoiceHoldOverlay();
+                voiceHoldCancel = false;
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void showVoiceHoldOverlay(boolean cancel) {
+        voiceHoldOverlay.setVisibility(View.VISIBLE);
+        voiceHoldHint.setText(cancel ? "松手取消" : "松手发送，上移取消");
+        voiceHoldHint.setTextColor(cancel ? 0xFFFFFFFF : 0xFFEAF4FF);
+        voiceHoldWave.setAlpha(cancel ? 0.35f : 1f);
+    }
+
+    private void hideVoiceHoldOverlay() {
+        if (voiceHoldOverlay != null) {
+            voiceHoldOverlay.setVisibility(View.GONE);
+        }
     }
 
     private void updateAssistantMessage(int index, String content, boolean speakAfterUpdate) {
@@ -430,13 +574,14 @@ public class MainActivity extends Activity {
     }
 
     private void toggleCallMute() {
+        Log.d(TAG, "mic clicked, callMuted before toggle=" + callMuted + ", speechListening=" + speechListening);
         callMuted = !callMuted;
         updateMicButtonState();
         if (callMuted) {
             cancelAutoListening();
             cancelAiSpeechEndDelay();
             if (speechListening) {
-                stopSpeechInput();
+                stopCallAudioCapture();
             }
             setCallState(CallState.IDLE, "中性", "麦克风已静音");
             subtitle.setText("已静音，点击麦克风可恢复自动识别");
@@ -445,6 +590,14 @@ public class MainActivity extends Activity {
         subtitle.setText("已取消静音，正在恢复自动识别");
         setCallState(CallState.IDLE, "中性", "正在准备自动监听");
         scheduleAutoListening(150);
+    }
+
+    private void stopCallAudioCapture() {
+        // 麦克风按钮只控制“是否继续收录声音”，不负责结束通话或切页。
+        // 静音时立即关闭当前识别/录音链路，避免继续把声音送到系统识别或火山服务。
+        stopCloudRecording(false);
+        finishSpeechInput(true);
+        avatarView.setAudioEnergy(0f);
     }
 
     private void scheduleAutoListening(long delayMs) {
@@ -612,6 +765,9 @@ public class MainActivity extends Activity {
     private void fillChatPrompt(String prompt) {
         // 快捷建议只是“提示词起手式”，不是独立模式。
         // 填入后用户仍然可以继续编辑。
+        if (chatVoiceMode) {
+            setChatVoiceMode(false);
+        }
         chatInput.setText(prompt);
         chatInput.setSelection(chatInput.length());
     }
@@ -844,6 +1000,21 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void stopVolcSpeechInputAsync() {
+        VolcSpeechClient client = volcSpeechClient;
+        volcSpeechClient = null;
+        if (client == null) {
+            return;
+        }
+        new Thread(() -> {
+            try {
+                client.stop();
+            } catch (Exception exception) {
+                Log.e(TAG, "stop volc speech client failed", exception);
+            }
+        }, "stop-volc-speech").start();
+    }
+
     private boolean startRealtimeSpeechInput(SpeechCallback callback) {
         ModelConfig model = modelStore.activeModel();
         if (!RealtimeSpeechClient.canUse(model)) {
@@ -893,6 +1064,21 @@ public class MainActivity extends Activity {
             realtimeSpeechClient.stop();
             realtimeSpeechClient = null;
         }
+    }
+
+    private void stopRealtimeSpeechInputAsync() {
+        RealtimeSpeechClient client = realtimeSpeechClient;
+        realtimeSpeechClient = null;
+        if (client == null) {
+            return;
+        }
+        new Thread(() -> {
+            try {
+                client.stop();
+            } catch (Exception exception) {
+                Log.e(TAG, "stop realtime speech client failed", exception);
+            }
+        }, "stop-realtime-speech").start();
     }
 
     private boolean startSpeechActivityFallback(SpeechCallback callback) {
@@ -1065,8 +1251,8 @@ public class MainActivity extends Activity {
             speechRecognizer.cancel();
         }
         if (cancelRecognizer) {
-            stopVolcSpeechInput();
-            stopRealtimeSpeechInput();
+            stopVolcSpeechInputAsync();
+            stopRealtimeSpeechInputAsync();
         }
     }
 
@@ -1105,26 +1291,42 @@ public class MainActivity extends Activity {
             return;
         }
         LayoutInflater inflater = getLayoutInflater();
+        long lastTime = 0L;
         for (ChatMessage message : chatMessages) {
+            if (lastTime == 0L || message.createdAt - lastTime > 5 * 60 * 1000L) {
+                TextView time = new TextView(this);
+                time.setText(formatChatTime(message.createdAt));
+                time.setTextColor(0xFFB0B4BA);
+                time.setTextSize(13);
+                time.setGravity(Gravity.CENTER);
+                LinearLayout.LayoutParams timeLp = new LinearLayout.LayoutParams(-1, dp(28));
+                timeLp.setMargins(0, dp(8), 0, dp(8));
+                chatList.addView(time, timeLp);
+            }
+            lastTime = message.createdAt;
             // 用户消息靠右、AI/系统消息靠左，通过左右 margin 形成聊天气泡布局。
             boolean user = ChatMessage.USER_TEXT.equals(message.type) || ChatMessage.USER_AUDIO.equals(message.type);
             TextView bubble = (TextView) inflater.inflate(R.layout.item_chat_message, chatList, false);
-            bubble.setText(message.displayText());
-            bubble.setTextColor(user ? 0xFFFFFFFF : 0xFF0F172A);
-            bubble.setTextSize(16);
+            bubble.setText(message.content);
+            bubble.setTextColor(user ? 0xFFFFFFFF : 0xFF111111);
+            bubble.setTextSize(17);
             bubble.setBackgroundResource(user ? R.drawable.bg_user_bubble : R.drawable.bg_assistant_card);
-            bubble.setElevation(dp(1));
             bubble.setOnLongClickListener(v -> {
-                // 长按复制的是 displayText，包含“你/AI/系统”前缀，方便粘贴到外部查看。
-                copy(message.displayText());
+                // 长按复制当前气泡内容，保持和界面展示一致。
+                copy(message.content);
                 Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show();
                 return true;
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.setMargins(user ? dp(54) : 0, dp(6), user ? 0 : dp(42), dp(6));
+            lp.setMargins(user ? dp(86) : 0, dp(8), user ? 0 : dp(54), dp(8));
             chatList.addView(bubble, lp);
         }
         chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private String formatChatTime(long timeMs) {
+        // 聊天页只需要轻量时间分隔，展示小时和分钟即可。
+        return new SimpleDateFormat("HH:mm", Locale.CHINA).format(new Date(timeMs));
     }
 
     private void renderModelList() {
@@ -1224,8 +1426,14 @@ public class MainActivity extends Activity {
         if (containsAny(value, "震惊", "吓我", "不会吧", "真的假的", "怎么可能")) {
             return "震惊";
         }
+        if (containsAny(value, "惊吓", "吓一跳", "吓到了", "突然吓到")) {
+            return "惊吓";
+        }
         if (containsAny(value, "害怕", "恐惧", "吓人", "怕了", "有点怕")) {
             return "害怕";
+        }
+        if (containsAny(value, "担忧", "担心死", "不放心", "忧虑", "发愁")) {
+            return "担忧";
         }
         if (containsAny(value, "紧张", "担心", "来不及", "急")) {
             return "紧张";
@@ -1236,11 +1444,35 @@ public class MainActivity extends Activity {
         if (containsAny(value, "害羞", "不好意思", "脸红", "羞")) {
             return "害羞";
         }
+        if (containsAny(value, "尴尬", "尬住", "社死", "好尬")) {
+            return "尴尬";
+        }
+        if (containsAny(value, "无语", "离谱", "服了", "没话说")) {
+            return "无语";
+        }
         if (containsAny(value, "难过", "委屈", "伤心", "想哭", "失望")) {
             return "难过";
         }
+        if (containsAny(value, "感动", "暖心", "破防", "谢谢你帮我")) {
+            return "感动";
+        }
         if (containsAny(value, "骄傲", "自豪", "厉害吧", "棒吧")) {
             return "骄傲";
+        }
+        if (containsAny(value, "佩服", "膜拜", "太强了", "牛啊")) {
+            return "佩服";
+        }
+        if (containsAny(value, "庆祝", "恭喜", "太好了", "成功了", "完成了")) {
+            return "庆祝";
+        }
+        if (containsAny(value, "鼓励", "加油", "支持我", "给我打气")) {
+            return "鼓励";
+        }
+        if (containsAny(value, "调皮", "开玩笑", "逗你", "哈哈哈")) {
+            return "调皮";
+        }
+        if (containsAny(value, "放松", "轻松", "舒服", "不急", "慢慢来")) {
+            return "放松";
         }
         if (containsAny(value, "喜欢", "爱你", "真棒", "厉害", "可爱")) {
             return "喜欢";
@@ -1280,8 +1512,14 @@ public class MainActivity extends Activity {
         if (containsAny(value, "震惊", "没想到", "竟然", "出乎意料", "不会吧")) {
             return "震惊";
         }
+        if (containsAny(value, "吓一跳", "惊吓", "突然", "猝不及防")) {
+            return "惊吓";
+        }
         if (containsAny(value, "危险", "害怕", "恐惧", "吓人", "风险很高")) {
             return "害怕";
+        }
+        if (containsAny(value, "担忧", "不放心", "需要留意", "有点担心")) {
+            return "担忧";
         }
         if (containsAny(value, "别急", "我会", "马上", "先稳住")) {
             return "紧张";
@@ -1292,11 +1530,32 @@ public class MainActivity extends Activity {
         if (containsAny(value, "不好意思", "有点害羞", "害羞", "脸红")) {
             return "害羞";
         }
+        if (containsAny(value, "尴尬", "有点尴尬", "不好处理", "卡住了")) {
+            return "尴尬";
+        }
+        if (containsAny(value, "无语", "离谱", "确实离谱", "没话说")) {
+            return "无语";
+        }
         if (containsAny(value, "严肃", "必须", "风险", "注意安全")) {
             return "严肃";
         }
         if (containsAny(value, "真棒", "值得骄傲", "很厉害", "做得好")) {
             return "骄傲";
+        }
+        if (containsAny(value, "佩服", "很强", "太强了", "厉害呀")) {
+            return "佩服";
+        }
+        if (containsAny(value, "恭喜", "庆祝", "成功了", "完成啦", "太好了")) {
+            return "庆祝";
+        }
+        if (containsAny(value, "加油", "你可以", "相信你", "继续保持")) {
+            return "鼓励";
+        }
+        if (containsAny(value, "开个玩笑", "逗你", "调皮", "哈哈")) {
+            return "调皮";
+        }
+        if (containsAny(value, "放松", "轻松一点", "慢慢来", "不着急")) {
+            return "放松";
         }
         if (containsAny(value, "可爱", "喜欢", "谢谢你", "很棒")) {
             return "喜欢";
@@ -1347,8 +1606,13 @@ public class MainActivity extends Activity {
         if (micButton == null) {
             return;
         }
-        micButton.setImageResource(callMuted ? R.drawable.ic_mute : R.drawable.ic_mic);
-        micButton.setBackgroundResource(callMuted ? R.drawable.bg_danger_button : R.drawable.bg_primary_button);
+        // 通话页参考豆包的底部控制区：正常收音是浅灰底黑麦克风；
+        // 静音后切换为白底红色斜杠麦克风，让“正在静音”一眼可见。
+        micButton.setImageResource(callMuted ? R.drawable.ic_mic_muted_red : R.drawable.ic_mic);
+        micButton.setBackgroundResource(callMuted
+                ? R.drawable.bg_doubao_call_button_muted
+                : R.drawable.bg_doubao_call_button);
+        micButton.setImageTintList(ColorStateList.valueOf(callMuted ? 0xFFFF2D2D : 0xFF18191C));
         micButton.setContentDescription(callMuted ? "取消静音" : "静音");
     }
 
@@ -1359,6 +1623,32 @@ public class MainActivity extends Activity {
         String next = current.startsWith("Transcript") ? line : current + "\n" + line;
         transcript.setText(next);
         conversationStore.saveTranscript(next);
+        appendCallMessageToChat(line);
+    }
+
+    private void appendCallMessageToChat(String line) {
+        // 语音通话和文字聊天共用同一份历史记录，用户从通话页返回后不应该丢失刚才的对话。
+        // transcript 行里带有“你：/豆芽：/系统：”前缀，这里只把前缀转换成消息类型，气泡里仍然只展示干净内容。
+        String type = ChatMessage.SYSTEM_TIP;
+        String content = line;
+        if (line.startsWith("你：")) {
+            type = ChatMessage.USER_AUDIO;
+            content = line.substring("你：".length()).trim();
+        } else if (line.startsWith("豆芽：")) {
+            type = ChatMessage.ASSISTANT_TEXT;
+            content = line.substring("豆芽：".length()).trim();
+        } else if (line.startsWith("系统：")) {
+            type = ChatMessage.SYSTEM_TIP;
+            content = line.substring("系统：".length()).trim();
+        }
+        if (content.isEmpty()) {
+            return;
+        }
+        chatMessages.add(new ChatMessage(type, content, modelStore.activeModel().name));
+        conversationStore.saveMessages(chatMessages);
+        if (chatScreen.getVisibility() == View.VISIBLE) {
+            renderChatList();
+        }
     }
 
     private String lastTranscript() {
@@ -1368,8 +1658,8 @@ public class MainActivity extends Activity {
     }
 
     private void refreshModelBadge() {
-        // 顶部徽标只显示当前默认模型名称，不参与模型页具体业务逻辑。
-        modelBadge.setText(modelStore.activeModel().name);
+        // 聊天页参考豆包样式，顶部只保留“内容由 AI 生成”的轻提示。
+        modelBadge.setText("内容由 AI 生成");
     }
 
     private void requestMicIfNeeded() {

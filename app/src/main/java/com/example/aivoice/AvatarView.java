@@ -28,7 +28,8 @@ public class AvatarView extends View {
             "期待", "好奇", "专注", "认真", "微笑", "开心", "热情", "安慰",
             "惊喜", "兴奋", "喜欢", "得意", "抱歉", "委屈", "难过", "紧张",
             "冷静", "严肃", "生气", "疑惑", "害羞", "疲惫", "震惊", "赞同",
-            "拒绝", "思考", "害怕", "骄傲"
+            "拒绝", "思考", "害怕", "骄傲", "庆祝", "感动", "尴尬", "无语",
+            "调皮", "放松", "佩服", "鼓励", "担忧", "惊吓"
     };
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -177,12 +178,14 @@ public class AvatarView extends View {
         float breathe = (float) Math.sin(phase * Math.PI * 2f);
         // 不同状态给头部不同幅度的倾斜/呼吸感，让静态头像看起来更有反馈。
         float headTilt = state == CallState.LISTENING ? -7f : state == CallState.THINKING ? 6f * breathe : 2f * breathe;
-        if (isExpression("生气", "严肃")) {
+        if (isExpression("生气", "严肃", "无语")) {
             headTilt -= 3f;
-        } else if (isExpression("兴奋", "惊喜", "震惊")) {
+        } else if (isExpression("兴奋", "惊喜", "震惊", "庆祝", "佩服", "鼓励")) {
             headTilt += 4f * breathe;
-        } else if (isExpression("委屈", "难过", "抱歉", "疲惫", "害怕")) {
+        } else if (isExpression("委屈", "难过", "抱歉", "疲惫", "害怕", "担忧", "惊吓", "尴尬")) {
             headTilt -= 5f;
+        } else if (isExpression("调皮")) {
+            headTilt += 7f;
         }
         float headY = cy + breathe * (state == CallState.IDLE ? 5f : 2f);
 
@@ -209,16 +212,18 @@ public class AvatarView extends View {
         } else if (state == CallState.ERROR) {
             color = Color.rgb(239, 90, 96);
         }
-        if (isExpression("开心", "热情", "兴奋", "惊喜", "骄傲", "赞同")) {
+        if (isExpression("开心", "热情", "兴奋", "惊喜", "骄傲", "赞同", "庆祝", "佩服", "鼓励")) {
             color = Color.rgb(255, 181, 70);
-        } else if (isExpression("喜欢", "害羞")) {
+        } else if (isExpression("喜欢", "害羞", "感动", "调皮")) {
             color = Color.rgb(255, 118, 168);
-        } else if (isExpression("安慰", "难过", "委屈", "疲惫")) {
+        } else if (isExpression("安慰", "难过", "委屈", "疲惫", "担忧")) {
             color = Color.rgb(111, 149, 235);
-        } else if (isExpression("生气", "拒绝", "严肃")) {
+        } else if (isExpression("生气", "拒绝", "严肃", "无语")) {
             color = Color.rgb(239, 68, 68);
-        } else if (isExpression("思考", "好奇", "疑惑")) {
+        } else if (isExpression("思考", "好奇", "疑惑", "尴尬")) {
             color = Color.rgb(147, 137, 255);
+        } else if (isExpression("放松")) {
+            color = Color.rgb(45, 212, 191);
         }
         paint.setStyle(Paint.Style.STROKE);
         for (int i = 0; i < 3; i++) {
@@ -262,13 +267,13 @@ public class AvatarView extends View {
     private void drawExpressionAura(Canvas canvas, float cx, float cy, float size) {
         // 这一层专门负责头像周围的“情绪氛围”，绘制在头像背后，避免遮挡口型和五官。
         float pulse = (float) (0.5f + 0.5f * Math.sin(phase * Math.PI * 2f));
-        if (isExpression("开心", "热情", "兴奋", "惊喜", "骄傲")) {
+        if (isExpression("开心", "热情", "兴奋", "惊喜", "骄傲", "庆祝", "佩服", "鼓励")) {
             drawRibbonArc(canvas, cx, cy, size, Color.rgb(255, 183, 77), pulse, 0f);
             drawRadiatingLines(canvas, cx, cy, size, Color.rgb(255, 183, 77), pulse);
             drawFloatingDots(canvas, cx, cy, size, Color.rgb(255, 214, 102), 10, 0.44f);
             return;
         }
-        if (isExpression("喜欢", "害羞")) {
+        if (isExpression("喜欢", "害羞", "感动", "调皮")) {
             drawRibbonArc(canvas, cx, cy, size, Color.rgb(255, 97, 151), pulse, 45f);
             drawOrbitHearts(canvas, cx, cy, size, pulse);
             drawFloatingDots(canvas, cx, cy, size, Color.rgb(255, 151, 188), 8, 0.38f);
@@ -279,17 +284,17 @@ public class AvatarView extends View {
             drawCheckRain(canvas, cx, cy, size);
             return;
         }
-        if (isExpression("生气", "拒绝")) {
+        if (isExpression("生气", "拒绝", "无语")) {
             drawDangerHalo(canvas, cx, cy, size, pulse);
             drawImpactLines(canvas, cx, cy, size, Color.rgb(239, 68, 68), pulse);
             return;
         }
-        if (isExpression("震惊", "害怕", "紧张")) {
+        if (isExpression("震惊", "害怕", "紧张", "惊吓", "担忧")) {
             drawAlertHalo(canvas, cx, cy, size, pulse);
             drawShakeMarks(canvas, cx, cy, size, pulse);
             return;
         }
-        if (isExpression("难过", "委屈", "抱歉")) {
+        if (isExpression("难过", "委屈", "抱歉", "尴尬")) {
             drawRibbonArc(canvas, cx, cy, size, Color.rgb(96, 165, 250), pulse, 180f);
             drawRainDrops(canvas, cx, cy, size);
             return;
@@ -301,6 +306,11 @@ public class AvatarView extends View {
         if (isExpression("思考", "疑惑", "好奇") || state == CallState.THINKING) {
             drawRibbonArc(canvas, cx, cy, size, Color.rgb(129, 140, 248), pulse, 90f);
             drawThoughtBubbles(canvas, cx, cy, size, pulse);
+            return;
+        }
+        if (isExpression("放松")) {
+            drawRibbonArc(canvas, cx, cy, size, Color.rgb(45, 212, 191), pulse, 315f);
+            drawFloatingDots(canvas, cx, cy, size, Color.rgb(94, 234, 212), 7, 0.36f);
             return;
         }
         if (isExpression("冷静", "专注", "认真")) {
@@ -582,9 +592,10 @@ public class AvatarView extends View {
         drawEyes(canvas, cx, cy, r);
         drawBrows(canvas, cx, cy, r);
         drawMouth(canvas, cx, cy, r);
-        if (isWarmExpression() || isExpression("惊喜", "喜欢", "兴奋", "得意", "害羞", "骄傲", "赞同")) {
+        if (isWarmExpression() || isExpression("惊喜", "喜欢", "兴奋", "得意", "害羞", "骄傲", "赞同",
+                "庆祝", "感动", "调皮", "佩服", "鼓励", "放松")) {
             // 正向表情加腮红，强化“正在回应用户”的情绪反馈。
-            int blushAlpha = isExpression("害羞") ? 150 : (int) (92 * expressionProgress);
+            int blushAlpha = isExpression("害羞", "感动", "调皮") ? 150 : (int) (92 * expressionProgress);
             paint.setColor(withAlpha(Color.rgb(255, 165, 185), blushAlpha));
             canvas.drawCircle(cx - r * 0.52f, cy + r * 0.18f, r * 0.09f, paint);
             canvas.drawCircle(cx + r * 0.52f, cy + r * 0.18f, r * 0.09f, paint);
@@ -595,15 +606,15 @@ public class AvatarView extends View {
     private void drawEyes(Canvas canvas, float cx, float cy, float r) {
         // IDLE 后段模拟眨眼，开心表情则让眼睛稍微压扁成微笑眼。
         float blink = state == CallState.IDLE && phase > 0.88f ? 0.15f : 1f;
-        if (isExpression("开心", "得意", "热情", "兴奋", "骄傲", "赞同")) {
+        if (isExpression("开心", "得意", "热情", "兴奋", "骄傲", "赞同", "庆祝", "佩服", "鼓励", "放松")) {
             blink = 0.45f;
-        } else if (isExpression("惊喜", "震惊")) {
+        } else if (isExpression("惊喜", "震惊", "惊吓")) {
             blink = 1.25f;
-        } else if (isExpression("委屈", "抱歉", "难过", "害怕")) {
+        } else if (isExpression("委屈", "抱歉", "难过", "害怕", "感动", "担忧", "尴尬")) {
             blink = 0.72f;
-        } else if (isExpression("冷静", "严肃", "生气", "拒绝", "疲惫")) {
+        } else if (isExpression("冷静", "严肃", "生气", "拒绝", "疲惫", "无语")) {
             blink = 0.55f;
-        } else if (isExpression("害羞")) {
+        } else if (isExpression("害羞", "调皮")) {
             blink = 0.35f;
         }
         paint.setColor(Color.rgb(35, 35, 45));
@@ -611,30 +622,30 @@ public class AvatarView extends View {
         canvas.drawOval(rect, paint);
         rect.set(cx + r * 0.24f, cy - r * 0.12f, cx + r * 0.52f, cy + r * 0.12f * blink);
         canvas.drawOval(rect, paint);
-        if (!isExpression("冷静", "严肃", "生气", "拒绝", "疲惫")) {
+        if (!isExpression("冷静", "严肃", "生气", "拒绝", "疲惫", "无语")) {
             // 眼睛高光会显著提升角色精致度，负向或疲惫表情则降低高光以保留情绪。
             paint.setColor(withAlpha(Color.WHITE, 150));
             canvas.drawCircle(cx - r * 0.43f, cy - r * 0.06f, r * 0.030f, paint);
             canvas.drawCircle(cx + r * 0.33f, cy - r * 0.06f, r * 0.030f, paint);
         }
-        if (isExpression("喜欢")) {
+        if (isExpression("喜欢", "感动")) {
             paint.setColor(Color.rgb(255, 99, 132));
             canvas.drawCircle(cx - r * 0.38f, cy - r * 0.04f, r * 0.06f, paint);
             canvas.drawCircle(cx - r * 0.30f, cy - r * 0.04f, r * 0.06f, paint);
             canvas.drawCircle(cx + r * 0.34f, cy - r * 0.04f, r * 0.06f, paint);
             canvas.drawCircle(cx + r * 0.42f, cy - r * 0.04f, r * 0.06f, paint);
-        } else if (isExpression("惊喜", "兴奋", "震惊")) {
+        } else if (isExpression("惊喜", "兴奋", "震惊", "庆祝", "佩服", "鼓励", "惊吓")) {
             paint.setColor(Color.WHITE);
             canvas.drawCircle(cx - r * 0.38f, cy - r * 0.06f, r * 0.045f, paint);
             canvas.drawCircle(cx + r * 0.38f, cy - r * 0.06f, r * 0.045f, paint);
         }
-        if (isExpression("委屈", "难过", "抱歉")) {
+        if (isExpression("委屈", "难过", "抱歉", "感动")) {
             paint.setColor(withAlpha(Color.rgb(147, 197, 253), 150));
             rect.set(cx - r * 0.50f, cy + r * 0.08f, cx - r * 0.34f, cy + r * 0.14f);
             canvas.drawOval(rect, paint);
             rect.set(cx + r * 0.34f, cy + r * 0.08f, cx + r * 0.50f, cy + r * 0.14f);
             canvas.drawOval(rect, paint);
-        } else if (isExpression("紧张", "害怕", "震惊")) {
+        } else if (isExpression("紧张", "害怕", "震惊", "担忧", "惊吓", "尴尬")) {
             paint.setColor(withAlpha(Color.WHITE, 118));
             canvas.drawCircle(cx - r * 0.31f, cy - r * 0.12f, r * 0.020f, paint);
             canvas.drawCircle(cx + r * 0.46f, cy - r * 0.12f, r * 0.020f, paint);
@@ -651,17 +662,17 @@ public class AvatarView extends View {
         // 眉毛偏移用于区分疑惑/思考/安慰等表情。
         paint.setColor(Color.rgb(52, 46, 55));
         paint.setStrokeWidth(r * 0.035f);
-        float offset = (isExpression("疑惑", "好奇", "思考") || state == CallState.THINKING) ? r * 0.06f : 0f;
-        if (isExpression("安慰", "抱歉", "委屈", "难过", "害怕", "疲惫")) {
+        float offset = (isExpression("疑惑", "好奇", "思考", "尴尬", "无语") || state == CallState.THINKING) ? r * 0.06f : 0f;
+        if (isExpression("安慰", "抱歉", "委屈", "难过", "害怕", "疲惫", "感动", "担忧", "惊吓")) {
             offset = r * 0.04f;
         }
-        if (isExpression("生气", "严肃", "拒绝")) {
+        if (isExpression("生气", "严肃", "拒绝", "无语")) {
             canvas.drawLine(cx - r * 0.58f, cy - r * 0.40f, cx - r * 0.25f, cy - r * 0.30f, paint);
             canvas.drawLine(cx + r * 0.25f, cy - r * 0.30f, cx + r * 0.58f, cy - r * 0.40f, paint);
-        } else if (isExpression("惊喜", "开心", "兴奋", "震惊", "赞同", "骄傲")) {
+        } else if (isExpression("惊喜", "开心", "兴奋", "震惊", "赞同", "骄傲", "庆祝", "佩服", "鼓励")) {
             canvas.drawLine(cx - r * 0.58f, cy - r * 0.38f, cx - r * 0.25f, cy - r * 0.42f, paint);
             canvas.drawLine(cx + r * 0.25f, cy - r * 0.42f, cx + r * 0.58f, cy - r * 0.38f, paint);
-        } else if (isExpression("抱歉", "委屈", "难过", "害怕", "疲惫")) {
+        } else if (isExpression("抱歉", "委屈", "难过", "害怕", "疲惫", "担忧", "感动", "尴尬", "惊吓")) {
             canvas.drawLine(cx - r * 0.58f, cy - r * 0.34f, cx - r * 0.25f, cy - r * 0.30f, paint);
             canvas.drawLine(cx + r * 0.25f, cy - r * 0.30f, cx + r * 0.58f, cy - r * 0.34f, paint);
         } else {
@@ -686,13 +697,14 @@ public class AvatarView extends View {
             // 闭嘴状态画成弧线；微笑类表情会把弧线向上抬。
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(r * 0.035f);
-            if (isExpression("惊喜", "兴奋", "震惊")) {
+            if (isExpression("惊喜", "兴奋", "震惊", "惊吓")) {
                 canvas.drawCircle(cx, cy + r * 0.28f, r * 0.075f, paint);
             } else {
-                float smile = isWarmExpression() || isExpression("得意", "喜欢", "赞同", "骄傲", "害羞") ? 18f : 0f;
-                if (isExpression("抱歉", "委屈", "难过", "疲惫", "害怕")) {
+                float smile = isWarmExpression() || isExpression("得意", "喜欢", "赞同", "骄傲", "害羞",
+                        "庆祝", "感动", "调皮", "佩服", "鼓励", "放松") ? 18f : 0f;
+                if (isExpression("抱歉", "委屈", "难过", "疲惫", "害怕", "担忧", "尴尬", "惊吓")) {
                     smile = -10f;
-                } else if (isExpression("生气", "严肃", "拒绝")) {
+                } else if (isExpression("生气", "严肃", "拒绝", "无语")) {
                     smile = -15f;
                 }
                 rect.set(cx - r * 0.23f, cy + r * 0.23f - smile, cx + r * 0.23f, cy + r * 0.38f + smile);
@@ -702,21 +714,24 @@ public class AvatarView extends View {
             paint.setStrokeWidth(1f);
         } else {
             // 张嘴状态同时放大宽高，用少量计算模拟说话口型，不需要逐帧图片。
-            float emotionWidth = isWarmExpression() || isExpression("得意", "喜欢", "兴奋", "骄傲", "赞同") ? 1.16f : 1f;
-            float emotionHeight = isExpression("惊喜", "兴奋", "震惊") ? 1.22f : 1f;
-            if (isExpression("抱歉", "委屈", "难过", "紧张", "害怕", "疲惫")) {
+            float emotionWidth = isWarmExpression() || isExpression("得意", "喜欢", "兴奋", "骄傲", "赞同",
+                    "庆祝", "感动", "调皮", "佩服", "鼓励", "放松") ? 1.16f : 1f;
+            float emotionHeight = isExpression("惊喜", "兴奋", "震惊", "庆祝", "惊吓") ? 1.22f : 1f;
+            if (isExpression("抱歉", "委屈", "难过", "紧张", "害怕", "疲惫", "担忧", "尴尬")) {
                 emotionWidth = 0.84f;
                 emotionHeight = 0.82f;
-            } else if (isExpression("生气", "严肃", "冷静", "拒绝")) {
+            } else if (isExpression("生气", "严肃", "冷静", "拒绝", "无语")) {
                 emotionWidth = 1.05f;
                 emotionHeight = 0.56f;
             }
             float mouthW = r * (0.24f + activeMouthLevel * 0.24f) * emotionWidth;
             float mouthH = r * (0.08f + activeMouthLevel * 0.28f) * emotionHeight;
             float mouthY = cy + r * 0.22f;
-            if (isWarmExpression() || isExpression("喜欢", "兴奋", "赞同", "骄傲", "害羞")) {
+            if (isWarmExpression() || isExpression("喜欢", "兴奋", "赞同", "骄傲", "害羞", "庆祝",
+                    "感动", "调皮", "佩服", "鼓励", "放松")) {
                 mouthY -= r * 0.03f;
-            } else if (isExpression("抱歉", "委屈", "难过", "生气", "严肃", "害怕", "拒绝", "疲惫")) {
+            } else if (isExpression("抱歉", "委屈", "难过", "生气", "严肃", "害怕", "拒绝", "疲惫",
+                    "担忧", "尴尬", "无语")) {
                 mouthY += r * 0.03f;
             }
             rect.set(cx - mouthW, mouthY - mouthH / 2f, cx + mouthW, mouthY + mouthH);
@@ -724,7 +739,7 @@ public class AvatarView extends View {
             paint.setColor(withAlpha(Color.WHITE, 180));
             rect.set(cx - mouthW * 0.55f, mouthY - mouthH * 0.28f, cx + mouthW * 0.55f, mouthY + mouthH * 0.02f);
             canvas.drawOval(rect, paint);
-            if (isWarmExpression() || isExpression("喜欢", "得意")) {
+            if (isWarmExpression() || isExpression("喜欢", "得意", "庆祝", "感动", "调皮", "佩服", "鼓励")) {
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(r * 0.022f);
                 paint.setColor(withAlpha(Color.rgb(255, 210, 220), 170));
@@ -737,13 +752,24 @@ public class AvatarView extends View {
     }
 
     private void drawEmotionMarks(Canvas canvas, float cx, float cy, float r) {
-        if (isExpression("惊喜", "兴奋", "开心", "骄傲")) {
+        if (isExpression("惊喜", "兴奋", "开心", "骄傲", "庆祝", "佩服", "鼓励")) {
             paint.setColor(withAlpha(Color.rgb(255, 196, 77), (int) (255 * expressionProgress)));
             drawSpark(canvas, cx + r * 0.70f, cy - r * 0.58f, r * 0.13f);
             drawSpark(canvas, cx - r * 0.74f, cy - r * 0.44f, r * 0.09f);
+            if (isExpression("庆祝")) {
+                drawSpark(canvas, cx, cy - r * 0.82f, r * 0.10f);
+            }
             return;
         }
-        if (isExpression("抱歉", "紧张", "害怕")) {
+        if (isExpression("感动")) {
+            paint.setColor(withAlpha(Color.rgb(255, 99, 132), (int) (220 * expressionProgress)));
+            drawHeart(canvas, cx + r * 0.66f, cy - r * 0.52f, r * 0.12f, withAlpha(Color.rgb(255, 99, 132), 220));
+            paint.setColor(withAlpha(Color.rgb(93, 169, 232), (int) (180 * expressionProgress)));
+            rect.set(cx - r * 0.50f, cy + r * 0.02f, cx - r * 0.40f, cy + r * 0.20f);
+            canvas.drawOval(rect, paint);
+            return;
+        }
+        if (isExpression("抱歉", "紧张", "害怕", "尴尬", "担忧", "惊吓")) {
             paint.setColor(withAlpha(Color.rgb(72, 185, 235), (int) (255 * expressionProgress)));
             rect.set(cx + r * 0.56f, cy - r * 0.34f, cx + r * 0.70f, cy - r * 0.10f);
             canvas.drawOval(rect, paint);
@@ -765,7 +791,7 @@ public class AvatarView extends View {
             paint.setStrokeWidth(1f);
             return;
         }
-        if (isExpression("震惊")) {
+        if (isExpression("震惊", "惊吓")) {
             paint.setColor(withAlpha(Color.rgb(239, 68, 68), (int) (255 * expressionProgress)));
             drawExclamation(canvas, cx + r * 0.72f, cy - r * 0.52f, r);
             return;
@@ -795,6 +821,33 @@ public class AvatarView extends View {
             canvas.drawCircle(cx - r * 0.52f, cy + r * 0.20f, r * 0.04f, paint);
             canvas.drawCircle(cx + r * 0.64f, cy + r * 0.18f, r * 0.055f, paint);
             canvas.drawCircle(cx + r * 0.52f, cy + r * 0.20f, r * 0.04f, paint);
+            return;
+        }
+        if (isExpression("调皮")) {
+            paint.setColor(withAlpha(Color.rgb(255, 99, 132), (int) (210 * expressionProgress)));
+            drawHeart(canvas, cx + r * 0.66f, cy - r * 0.48f, r * 0.10f, withAlpha(Color.rgb(255, 99, 132), 210));
+            paint.setColor(withAlpha(Color.rgb(255, 196, 77), (int) (230 * expressionProgress)));
+            drawSpark(canvas, cx - r * 0.70f, cy - r * 0.46f, r * 0.08f);
+            return;
+        }
+        if (isExpression("无语")) {
+            paint.setColor(withAlpha(Color.rgb(100, 116, 139), (int) (230 * expressionProgress)));
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(r * 0.20f);
+            paint.setFakeBoldText(true);
+            canvas.drawText("...", cx + r * 0.66f, cy - r * 0.46f, paint);
+            paint.setFakeBoldText(false);
+            paint.setTextAlign(Paint.Align.LEFT);
+            return;
+        }
+        if (isExpression("放松")) {
+            paint.setColor(withAlpha(Color.rgb(45, 212, 191), (int) (220 * expressionProgress)));
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(r * 0.24f);
+            paint.setFakeBoldText(true);
+            canvas.drawText("♪", cx + r * 0.66f, cy - r * 0.48f, paint);
+            paint.setFakeBoldText(false);
+            paint.setTextAlign(Paint.Align.LEFT);
             return;
         }
         if (isExpression("疑惑", "好奇")) {
@@ -868,19 +921,19 @@ public class AvatarView extends View {
 
     private int expressionPrimaryColor() {
         // 表情主色用于外圈、柔光和粒子，保证同一个情绪的视觉语言一致。
-        if (isExpression("开心", "热情", "兴奋", "惊喜", "骄傲")) {
+        if (isExpression("开心", "热情", "兴奋", "惊喜", "骄傲", "庆祝", "佩服", "鼓励")) {
             return Color.rgb(255, 183, 77);
         }
-        if (isExpression("喜欢", "害羞")) {
+        if (isExpression("喜欢", "害羞", "感动", "调皮")) {
             return Color.rgb(255, 97, 151);
         }
         if (isExpression("赞同")) {
             return Color.rgb(16, 185, 129);
         }
-        if (isExpression("生气", "拒绝", "严肃")) {
+        if (isExpression("生气", "拒绝", "严肃", "无语")) {
             return Color.rgb(239, 68, 68);
         }
-        if (isExpression("震惊", "害怕", "紧张")) {
+        if (isExpression("震惊", "害怕", "紧张", "担忧", "惊吓", "尴尬")) {
             return Color.rgb(251, 146, 60);
         }
         if (isExpression("难过", "委屈", "抱歉", "安慰", "疲惫")) {
@@ -888,6 +941,9 @@ public class AvatarView extends View {
         }
         if (isExpression("思考", "疑惑", "好奇")) {
             return Color.rgb(129, 140, 248);
+        }
+        if (isExpression("放松")) {
+            return Color.rgb(45, 212, 191);
         }
         if (isExpression("冷静", "专注", "认真")) {
             return Color.rgb(59, 130, 246);
@@ -897,16 +953,16 @@ public class AvatarView extends View {
 
     private int expressionSecondaryColor() {
         // 辅助色用于柔光边缘，让氛围不是单色圆盘。
-        if (isExpression("开心", "热情", "兴奋", "惊喜", "骄傲")) {
+        if (isExpression("开心", "热情", "兴奋", "惊喜", "骄傲", "庆祝", "佩服", "鼓励")) {
             return Color.rgb(255, 226, 122);
         }
-        if (isExpression("喜欢", "害羞")) {
+        if (isExpression("喜欢", "害羞", "感动", "调皮")) {
             return Color.rgb(255, 182, 210);
         }
-        if (isExpression("生气", "拒绝", "严肃")) {
+        if (isExpression("生气", "拒绝", "严肃", "无语")) {
             return Color.rgb(251, 113, 133);
         }
-        if (isExpression("震惊", "害怕", "紧张")) {
+        if (isExpression("震惊", "害怕", "紧张", "担忧", "惊吓", "尴尬")) {
             return Color.rgb(253, 186, 116);
         }
         if (isExpression("难过", "委屈", "抱歉", "安慰", "疲惫")) {
@@ -914,6 +970,9 @@ public class AvatarView extends View {
         }
         if (isExpression("思考", "疑惑", "好奇")) {
             return Color.rgb(196, 181, 253);
+        }
+        if (isExpression("放松")) {
+            return Color.rgb(153, 246, 228);
         }
         return Color.rgb(186, 230, 253);
     }
@@ -928,7 +987,12 @@ public class AvatarView extends View {
                 || "微笑".equals(expression)
                 || "安慰".equals(expression)
                 || "热情".equals(expression)
-                || "期待".equals(expression);
+                || "期待".equals(expression)
+                || "庆祝".equals(expression)
+                || "感动".equals(expression)
+                || "调皮".equals(expression)
+                || "鼓励".equals(expression)
+                || "放松".equals(expression);
     }
 
     private boolean isExpression(String... values) {

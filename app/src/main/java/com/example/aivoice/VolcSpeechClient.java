@@ -144,8 +144,11 @@ final class VolcSpeechClient {
         engine.setOptionString(SpeechEngineDefines.PARAMS_KEY_RECORDER_TYPE_STRING, SpeechEngineDefines.RECORDER_TYPE_RECORDER);
         engine.setOptionInt(SpeechEngineDefines.PARAMS_KEY_RECORDER_PRESET_INT, SpeechEngineDefines.RECORDER_PRESET_VOICE_RECOGNITION);
         engine.setOptionInt(SpeechEngineDefines.PARAMS_KEY_SAMPLE_RATE_INT, 16000);
+        // 16kHz / 16bit / mono 的 20ms PCM 帧正好是 640 字节。
+        // 火山 Dialog SDK 的 Opus 编码器按 20ms 帧处理，避免设备录音链路给出 10ms/320 字节帧后被编码器拒绝。
+        engine.setOptionInt(SpeechEngineDefines.PARAMS_KEY_ASR_PACKAGE_SIZE_INT, 20);
         engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_ENABLE_GET_VOLUME_BOOL, true);
-        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_ENABLE_RECORDER_AUDIO_CALLBACK_BOOL, true);
+        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_ENABLE_RECORDER_AUDIO_CALLBACK_BOOL, false);
 
         engine.setOptionString(SpeechEngineDefines.PARAMS_KEY_DIALOG_ADDRESS_STRING, "wss://openspeech.bytedance.com");
         engine.setOptionString(SpeechEngineDefines.PARAMS_KEY_DIALOG_URI_STRING, "/api/v3/realtime/dialogue");
@@ -153,8 +156,8 @@ final class VolcSpeechClient {
         // 不混用到这里，否则服务端会把启动请求判定为参数非法。
         engine.setOptionInt(SpeechEngineDefines.PARAMS_KEY_DIALOG_WORK_MODE_INT, SpeechEngineDefines.DIALOG_WORK_MODE_DEFAULT);
         engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_BOOL, true);
-        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_RECORDER_AUDIO_CALLBACK_BOOL, true);
-        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_AUDIO_CALLBACK_BOOL, true);
+        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_RECORDER_AUDIO_CALLBACK_BOOL, false);
+        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_AUDIO_CALLBACK_BOOL, false);
         engine.setOptionString(SpeechEngineDefines.PARAMS_KEY_START_ENGINE_PAYLOAD_STRING, startPayload());
     }
 
@@ -250,12 +253,24 @@ final class VolcSpeechClient {
             postError("火山语音服务错误，事件 " + type
                     + "，原始返回：" + compact(errorPayload(type, payload))
                     + "，配置摘要：" + diagnosticInfo());
-            stop();
+            stopOutsideCallback();
             return;
         }
         if (type == SpeechEngineDefines.MESSAGE_TYPE_ENGINE_STOP) {
-            stop();
+            stopOutsideCallback();
         }
+    }
+
+    private void stopOutsideCallback() {
+        // SpeechEngine 的回调线程中直接 destroyEngine 可能卡住原生层。
+        // 先跳出回调栈，再在独立线程释放，避免 UI 点击无响应或被系统判定 ANR。
+        new Thread(() -> {
+            try {
+                stop();
+            } catch (Exception exception) {
+                Log.e(TAG, "stop speech engine outside callback failed", exception);
+            }
+        }, "volc-stop-outside-callback").start();
     }
 
     private String startPayload() {
