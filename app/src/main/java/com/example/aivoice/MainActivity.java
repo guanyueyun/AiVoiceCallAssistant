@@ -623,6 +623,57 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void handleAiAudioData(byte[] data, int length) {
+        if (callMuted || !isCallScreenVisible() || data == null || length < 160) {
+            return;
+        }
+        float energy = audioEnergy(data, length);
+        if (energy <= 0.01f) {
+            return;
+        }
+        cancelAutoListening();
+        cancelAiSpeechEndDelay();
+        if (callState != CallState.SPEAKING) {
+            setCallState(CallState.SPEAKING, currentAiExpression, "豆芽正在说话");
+        }
+        if (avatarView != null) {
+            avatarView.setAudioEnergy(energy);
+        }
+        scheduleAiAudioQuiet(900);
+    }
+
+    private void scheduleAiAudioQuiet(long delayMs) {
+        cancelAiSpeechEndDelay();
+        aiSpeechEndRunnable = () -> {
+            aiSpeechEndRunnable = null;
+            if (!callMuted && isCallScreenVisible() && callState == CallState.SPEAKING) {
+                setCallState(CallState.LISTENING, "好奇", "豆芽正在继续听");
+                scheduleAutoListening(250);
+            }
+        };
+        handler.postDelayed(aiSpeechEndRunnable, delayMs);
+    }
+
+    private float audioEnergy(byte[] data, int length) {
+        if (data == null || length < 2) {
+            return 0f;
+        }
+        long sum = 0L;
+        int samples = 0;
+        int max = Math.min(length, data.length);
+        max -= max % 2;
+        for (int i = 0; i < max; i += 2) {
+            int sample = (data[i] & 0xFF) | (data[i + 1] << 8);
+            sum += (long) sample * sample;
+            samples++;
+        }
+        if (samples == 0) {
+            return 0f;
+        }
+        double rms = Math.sqrt(sum / (double) samples) / 32768.0;
+        return (float) Math.max(0f, Math.min(1f, rms * 4.5f));
+    }
+
     private boolean isCallScreenVisible() {
         return callScreen != null && callScreen.getVisibility() == View.VISIBLE;
     }
@@ -697,17 +748,9 @@ public class MainActivity extends Activity {
 
             @Override
             public void onAiSpeechEnd() {
-                if (callMuted || !isCallScreenVisible()) {
-                    return;
+                if (!callMuted && isCallScreenVisible() && callState == CallState.SPEAKING) {
+                    scheduleAiAudioQuiet(350);
                 }
-                cancelAiSpeechEndDelay();
-                aiSpeechEndRunnable = () -> {
-                    aiSpeechEndRunnable = null;
-                    if (!callMuted && isCallScreenVisible() && callState == CallState.SPEAKING) {
-                        setCallState(CallState.LISTENING, "好奇", "豆芽正在继续听");
-                    }
-                };
-                handler.postDelayed(aiSpeechEndRunnable, 900);
             }
 
             @Override
@@ -936,9 +979,14 @@ public class MainActivity extends Activity {
 
             @Override
             public void onVolume(float volume) {
-                if ((callState == CallState.LISTENING || callState == CallState.SPEAKING) && avatarView != null) {
+                if (callState == CallState.LISTENING && avatarView != null) {
                     avatarView.setAudioEnergy(volume);
                 }
+            }
+
+            @Override
+            public void onAiAudioData(byte[] data, int length) {
+                handleAiAudioData(data, length);
             }
 
             @Override

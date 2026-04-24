@@ -12,6 +12,7 @@ import com.bytedance.speech.speechengine.SpeechEngineGenerator;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.Arrays;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -29,6 +30,8 @@ final class VolcSpeechClient {
     interface Callback {
         void onStatus(String message);
         void onVolume(float volume);
+        default void onAiAudioData(byte[] data, int length) {
+        }
         void onPartial(String text);
         void onFinal(String text);
         void onAiPartial(String text);
@@ -157,7 +160,8 @@ final class VolcSpeechClient {
         engine.setOptionInt(SpeechEngineDefines.PARAMS_KEY_DIALOG_WORK_MODE_INT, SpeechEngineDefines.DIALOG_WORK_MODE_DEFAULT);
         engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_BOOL, true);
         engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_RECORDER_AUDIO_CALLBACK_BOOL, false);
-        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_AUDIO_CALLBACK_BOOL, false);
+        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_AUDIO_CALLBACK_BOOL, true);
+        engine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_DECODER_AUDIO_CALLBACK_BOOL, false);
         engine.setOptionString(SpeechEngineDefines.PARAMS_KEY_START_ENGINE_PAYLOAD_STRING, startPayload());
     }
 
@@ -241,7 +245,9 @@ final class VolcSpeechClient {
         }
         if (type == SpeechEngineDefines.MESSAGE_TYPE_DIALOG_PLAYER_AUDIO
                 || type == SpeechEngineDefines.MESSAGE_TYPE_PLAYER_AUDIO_DATA
+                || type == SpeechEngineDefines.MESSAGE_TYPE_TTS_AUDIO_DATA
                 || type == SpeechEngineDefines.MESSAGE_TYPE_DECODER_AUDIO_DATA) {
+            postAiAudioData(data, length);
             postVolume(audioEnergy(data, length));
             return;
         }
@@ -515,6 +521,18 @@ final class VolcSpeechClient {
         handler.post(() -> {
             if (callback != null) {
                 callback.onVolume(volume);
+            }
+        });
+    }
+
+    private void postAiAudioData(byte[] data, int length) {
+        if (data == null || length <= 0) {
+            return;
+        }
+        byte[] copy = Arrays.copyOf(data, length);
+        handler.post(() -> {
+            if (callback != null) {
+                callback.onAiAudioData(copy, copy.length);
             }
         });
     }
